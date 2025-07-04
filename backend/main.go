@@ -1,6 +1,7 @@
 package main
 
 import (
+	"backend/chat"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -58,6 +59,7 @@ func main() {
 	// 注册接口
 	r.POST("/api/user/register", RegisterHandler(db)) // user.go 中的注册接口
 	r.GET("/api/dishes", GetAllDishes(db))            // dishes.go 中的获取菜品接口
+	r.POST("/api/chat", chat.ChatHandler(db))         // chat.go 中的聊天接口
 
 	// 启动服务器
 	if err := r.Run(":8080"); err != nil {
