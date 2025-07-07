@@ -1,2 +1,3 @@
 miniprogram
-config.json
+*.json
+data/avatar
