@@ -50,9 +50,8 @@ func main() {
 	r.Use(sessions.Sessions("todayeat-session", store))
 
 	// 注册接口
-	r.GET("/api/dishes", GetAllDishes(db)) // dishes.go 中的获取菜品接口
-	// r.POST("/api/chat", chat.ChatHandler(db, aiCfg.APIKey))                         // chat.go 中的聊天接口
-	r.GET("/api/chat/ws", chat.ChatWSHandler(aiCfg.APIKey))
+	r.GET("/api/dishes", GetAllDishes(db))                                             // dishes.go 中的获取菜品接口
+	r.GET("/api/chat/ws", chat.ChatWSHandler(aiCfg.APIKey))                            // chat.go 中的聊天接口
 	r.POST("/api/user/wxlogin", user.WxLoginHandler(db, wxCfg.AppID, wxCfg.AppSecret)) //login.go 中的微信登录接口
 	r.POST("/api/user/logout", user.LogoutHandler())                                   //login.go 中的登出接口
 	r.POST("/api/user/avatar", user.UploadAvatarHandler(db))                           //avatar.go 中的上传头像接口
