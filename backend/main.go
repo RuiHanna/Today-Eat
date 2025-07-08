@@ -2,41 +2,25 @@ package main
 
 import (
 	"backend/chat"
+	"backend/config"
+	"backend/user"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
+
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 )
-
-// 数据库配置
-type Config struct {
-	DBUser     string `json:"db_user"`
-	DBPassword string `json:"db_password"`
-	DBHost     string `json:"db_host"`
-	DBPort     int    `json:"db_port"`
-	DBName     string `json:"db_name"`
-}
-
-// 加载数据库
-func loadConfig(path string) (*Config, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	var cfg Config
-	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
-		return nil, err
-	}
-	return &cfg, nil
-}
 
 func main() {
 	// 加载配置文件
-	cfg, err := loadConfig("config.json")
+	cfg, err := config.LoadDBConfig("config/db_config.json")
+	if err != nil {
+		panic(err)
+	}
+	wxCfg, err := config.LoadWxConfig("config/wx_config.json")
 	if err != nil {
 		panic(err)
 	}
@@ -56,10 +40,18 @@ func main() {
 	}
 	r := gin.Default()
 
+	r.Static("/avatar", "./data/avatar")
+
+	store := cookie.NewStore([]byte("secret-key"))
+	r.Use(sessions.Sessions("todayeat-session", store))
+
 	// 注册接口
-	r.POST("/api/user/register", RegisterHandler(db)) // user.go 中的注册接口
-	r.GET("/api/dishes", GetAllDishes(db))            // dishes.go 中的获取菜品接口
-	r.POST("/api/chat", chat.ChatHandler(db))         // chat.go 中的聊天接口
+	r.GET("/api/dishes", GetAllDishes(db))                                             // dishes.go 中的获取菜品接口
+	r.POST("/api/chat", chat.ChatHandler(db))                                          // chat.go 中的聊天接口
+	r.POST("/api/user/wxlogin", user.WxLoginHandler(db, wxCfg.AppID, wxCfg.AppSecret)) //login.go 中的微信登录接口
+	r.POST("/api/user/logout", user.LogoutHandler())                                   //login.go 中的登出接口
+	r.POST("/api/user/avatar", user.UploadAvatarHandler(db))                           //avatar.go 中的上传头像接口
+	r.POST("/api/user/update_nickname", user.UpdateNicknameHandler(db))                //login.go 中的更新昵称接口
 
 	// 启动服务器
 	if err := r.Run(":8080"); err != nil {
