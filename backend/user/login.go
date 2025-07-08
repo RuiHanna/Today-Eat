@@ -136,13 +136,3 @@ func UpdateNicknameHandler(db *sql.DB) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
 	}
 }
-
-// LogoutHandler 登出处理函数
-func LogoutHandler() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		session := sessions.Default(c)
-		session.Clear()
-		session.Save()
-		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "已登出"})
-	}
-}
