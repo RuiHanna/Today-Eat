@@ -1,104 +1,112 @@
 package chat
 
 import (
+	"bufio"
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 )
 
-type ChatRequest struct {
+type WSMessage struct {
 	Message string `json:"message"`
 }
 
-type Dish struct {
-	Name        string
-	Description string
-	Taste       string
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true // 允许所有跨域连接，生产环境请限制
+	},
 }
 
-func ChatHandler(db *sql.DB, apiKey string) gin.HandlerFunc {
+func ChatWSHandler(apiKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var req ChatRequest
-		if err := c.ShouldBindJSON(&req); err != nil || req.Message == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "参数错误"})
-			return
-		}
-
-		reply, err := callDeepSeek(apiKey, req.Message)
+		conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 2, "message": "AI 接口调用失败"})
+			fmt.Println("WebSocket Upgrade error:", err)
+			return
+		}
+		defer conn.Close()
+
+		// 接收用户问题
+		_, msgBytes, err := conn.ReadMessage()
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte("接收消息失败"))
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"code":  0,
-			"reply": reply,
+		var req WSMessage
+		if err := json.Unmarshal(msgBytes, &req); err != nil || req.Message == "" {
+			conn.WriteMessage(websocket.TextMessage, []byte("格式错误"))
+			return
+		}
+
+		// 发起 DeepSeek 流式请求
+		err = callDeepSeekStream(apiKey, req.Message, func(content string) {
+			conn.WriteMessage(websocket.TextMessage, []byte(content))
 		})
+
+		if err != nil {
+			conn.WriteMessage(websocket.TextMessage, []byte("AI 调用失败: "+err.Error()))
+		}
 	}
 }
 
-func callDeepSeek(apiKey string, message string) (string, error) {
+func callDeepSeekStream(apiKey string, message string, onDelta func(string)) error {
 	url := "https://api.deepseek.com/v1/chat/completions"
 
 	bodyMap := map[string]interface{}{
-		"model": "deepseek-chat",
+		"model":  "deepseek-chat",
+		"stream": true,
 		"messages": []map[string]string{
 			{"role": "system", "content": "你是一个美食推荐助手，根据用户描述推荐菜品。"},
 			{"role": "user", "content": message},
 		},
 		"temperature": 0.7,
 	}
-	bodyBytes, _ := json.Marshal(bodyMap)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	bodyBytes, _ := json.Marshal(bodyMap)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return "", err
+		return err
 	}
+
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := ioutil.ReadAll(resp.Body)
-	// fmt.Println("DeepSeek response:", string(respBody))
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadBytes('\n')
+		if err != nil {
+			break
+		}
 
-	// 提取 AI 回复内容
-	var result map[string]interface{}
-	err = json.Unmarshal(respBody, &result)
-	if err != nil {
-		return "", fmt.Errorf("解析返回失败: %v", err)
+		// 处理每行：开头是 "data: "
+		if bytes.HasPrefix(line, []byte("data: ")) {
+			jsonPart := bytes.TrimPrefix(line, []byte("data: "))
+			if bytes.Contains(jsonPart, []byte("[DONE]")) {
+				break
+			}
+			var piece map[string]interface{}
+			if err := json.Unmarshal(jsonPart, &piece); err == nil {
+				if delta, ok := piece["choices"].([]interface{}); ok && len(delta) > 0 {
+					if item, ok := delta[0].(map[string]interface{}); ok {
+						if deltaVal, ok := item["delta"].(map[string]interface{}); ok {
+							if content, ok := deltaVal["content"].(string); ok {
+								onDelta(content)
+							}
+						}
+					}
+				}
+			}
+		}
 	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return "", fmt.Errorf("未找到回复内容: %s", string(respBody))
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("回复结构错误")
-	}
-
-	msg, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return "", fmt.Errorf("message 结构错误")
-	}
-
-	content, ok := msg["content"].(string)
-	if !ok {
-		return "", fmt.Errorf("回复内容无法读取")
-	}
-
-	return content, nil
-
+	return nil
 }
