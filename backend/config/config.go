@@ -25,6 +25,11 @@ type ServerConfig struct {
 	Domain string `json:"domain"`
 }
 
+// AI配置
+type AIConfig struct {
+	APIKey string `json:"api_key"`
+}
+
 // LoadDBConfig 读取数据库配置
 func LoadDBConfig(path string) (*DBConfig, error) {
 	file, err := os.Open(path)
@@ -64,6 +69,21 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 	defer file.Close()
 
 	var cfg ServerConfig
+	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// LoadAIConfig 读取AI配置
+func LoadAIConfig(path string) (*AIConfig, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var cfg AIConfig
 	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
 		return nil, err
 	}

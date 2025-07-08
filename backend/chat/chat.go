@@ -1,10 +1,12 @@
 package chat
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,7 +21,7 @@ type Dish struct {
 	Taste       string
 }
 
-func ChatHandler(db *sql.DB) gin.HandlerFunc {
+func ChatHandler(db *sql.DB, apiKey string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req ChatRequest
 		if err := c.ShouldBindJSON(&req); err != nil || req.Message == "" {
@@ -27,74 +29,76 @@ func ChatHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		// 提取关键词
-		message := req.Message
-		taste := detectTaste(message)
-
-		if taste == "" {
-			c.JSON(http.StatusOK, gin.H{
-				"code":  0,
-				"reply": "暂时无法识别你想吃的口味 😥\n\n你可以试试说：\n- 我想吃辣的\n- 推荐几个清淡的菜\n- 有没有甜品推荐？",
-			})
-			return
-		}
-
-		// 查询菜品
-		query := "SELECT name, description, taste FROM dishes WHERE taste LIKE ? LIMIT 3"
-		rows, err := db.Query(query, "%"+taste+"%")
+		reply, err := callDeepSeek(apiKey, req.Message)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 2, "message": "数据库查询失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 2, "message": "AI 接口调用失败"})
 			return
 		}
-		defer rows.Close()
-
-		var dishes []Dish
-		for rows.Next() {
-			var dish Dish
-			if err := rows.Scan(&dish.Name, &dish.Description, &dish.Taste); err == nil {
-				dishes = append(dishes, dish)
-			}
-		}
-
-		if len(dishes) == 0 {
-			c.JSON(http.StatusOK, gin.H{
-				"code":  0,
-				"reply": fmt.Sprintf("我没找到 [%s] 口味的菜 😔，换一个试试吧～", taste),
-			})
-			return
-		}
-
-		// 生成 markdown 回复
-		md := fmt.Sprintf("### 推荐的%s菜品\n\n", taste)
-		for _, d := range dishes {
-			md += fmt.Sprintf("- **%s**：%s\n", d.Name, d.Description)
-		}
-		md += "\n> 希望你喜欢这些推荐 🍽️"
 
 		c.JSON(http.StatusOK, gin.H{
 			"code":  0,
-			"reply": md,
+			"reply": reply,
 		})
 	}
 }
 
-// 简单关键词匹配（可替换为NLP）
-func detectTaste(message string) string {
-	keywords := map[string]string{
-		"辣":   "辣",
-		"甜":   "甜",
-		"酸":   "酸",
-		"咸":   "咸",
-		"清淡":  "清淡",
-		"重口味": "辣",
-		"麻":   "辣",
-		"鲜":   "鲜",
+func callDeepSeek(apiKey string, message string) (string, error) {
+	url := "https://api.deepseek.com/v1/chat/completions"
+
+	bodyMap := map[string]interface{}{
+		"model": "deepseek-chat",
+		"messages": []map[string]string{
+			{"role": "system", "content": "你是一个美食推荐助手，根据用户描述推荐菜品。"},
+			{"role": "user", "content": message},
+		},
+		"temperature": 0.7,
+	}
+	bodyBytes, _ := json.Marshal(bodyMap)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := ioutil.ReadAll(resp.Body)
+	// fmt.Println("DeepSeek response:", string(respBody))
+
+	// 提取 AI 回复内容
+	var result map[string]interface{}
+	err = json.Unmarshal(respBody, &result)
+	if err != nil {
+		return "", fmt.Errorf("解析返回失败: %v", err)
 	}
 
-	for k, v := range keywords {
-		if strings.Contains(message, k) {
-			return v
-		}
+	choices, ok := result["choices"].([]interface{})
+	if !ok || len(choices) == 0 {
+		return "", fmt.Errorf("未找到回复内容: %s", string(respBody))
 	}
-	return ""
+
+	firstChoice, ok := choices[0].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("回复结构错误")
+	}
+
+	msg, ok := firstChoice["message"].(map[string]interface{})
+	if !ok {
+		return "", fmt.Errorf("message 结构错误")
+	}
+
+	content, ok := msg["content"].(string)
+	if !ok {
+		return "", fmt.Errorf("回复内容无法读取")
+	}
+
+	return content, nil
+
 }
