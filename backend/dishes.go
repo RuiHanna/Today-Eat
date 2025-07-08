@@ -19,10 +19,10 @@ type Dish struct {
 	CreatedAt   string  `json:"created_at"`
 }
 
-// GetAllDishes 获取所有菜品
+// GetAllDishes 获取所有菜品(评分从高到低)
 func GetAllDishes(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		rows, err := db.Query("SELECT id, name, price, description, taste, score, image_url, created_at FROM dishes")
+		rows, err := db.Query("SELECT id, name, price, description, taste, score, image_url, created_at FROM dishes ORDER BY score DESC")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 1, "message": "数据库查询失败"})
 			return
