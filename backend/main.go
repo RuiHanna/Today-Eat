@@ -62,6 +62,9 @@ func main() {
 	r.GET("/api/user/:user_id/favorites", recommend.GetUserLikes(db))                  //like.go 中的获取用户收藏的菜品接口
 	r.POST("/api/history/add", recommend.AddRecommendHistory(db))                      //dishes.go 中的添加推荐历史接口
 	r.GET("/api/history", recommend.GetRecommendHistory(db))                           //dishes.go 中的获取推荐历史接口
+	r.POST("/api/dish/custom", recommend.CustomDishHandler(aiCfg.APIKey, db))          //recommend.go 中的自定义推荐接口
+	r.POST("/api/custom/add", recommend.AddCustomRecordHandler(db))                    //dishes.go 中的添加定制推荐记录接口
+	r.GET("/api/user/info", user.GetUserInfoHandler(db))                               //login.go 中的获取用户完整信息接口
 
 	// 启动服务器
 	if err := r.Run(":8080"); err != nil {

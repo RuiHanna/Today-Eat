@@ -74,18 +74,35 @@ func WxLoginHandler(db *sql.DB, appID, appSecret string) gin.HandlerFunc {
 			}
 		}
 
+		// 获取用户统计信息
+		var mealCount int
+		var favoriteTaste, commonMood, moodFood sql.NullString
+
+		err = db.QueryRow(`
+			SELECT meal_count, favorite_taste, common_mood, mood_food 
+			FROM users WHERE id = ?
+		`, userID).Scan(&mealCount, &favoriteTaste, &commonMood, &moodFood)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 6, "message": "用户统计信息查询失败"})
+			return
+		}
+
 		// 写入 session
 		session := sessions.Default(c)
 		session.Set("user_id", userID)
 		session.Save()
 
 		c.JSON(http.StatusOK, gin.H{
-			"code":     0,
-			"message":  "登录成功",
-			"user_id":  userID,
-			"openid":   openid,
-			"nickname": req.Nickname,
-			"avatar":   req.AvatarURL,
+			"code":           0,
+			"message":        "登录成功",
+			"user_id":        userID,
+			"openid":         openid,
+			"nickname":       req.Nickname,
+			"avatar":         req.AvatarURL,
+			"meal_count":     mealCount,
+			"favorite_taste": favoriteTaste.String,
+			"common_mood":    commonMood.String,
+			"mood_food":      moodFood.String,
 		})
 	}
 }
@@ -134,5 +151,42 @@ func UpdateNicknameHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "更新成功"})
+	}
+}
+
+// GetUserInfoHandler 返回用户完整信息
+func GetUserInfoHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userID := c.Query("user_id")
+		if userID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "缺少 user_id"})
+			return
+		}
+
+		var nickname, avatar string
+		var mealCount int
+		var favoriteTaste, commonMood, moodFood sql.NullString
+
+		err := db.QueryRow(`
+			SELECT nickname, avatar_url, meal_count, favorite_taste, common_mood, mood_food
+			FROM users WHERE id = ?
+		`, userID).Scan(&nickname, &avatar, &mealCount, &favoriteTaste, &commonMood, &moodFood)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 2, "message": "查询失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": 0,
+			"data": gin.H{
+				"nickname":       nickname,
+				"avatar_url":     avatar,
+				"meal_count":     mealCount,
+				"favorite_taste": favoriteTaste.String,
+				"common_mood":    commonMood.String,
+				"mood_food":      moodFood.String,
+			},
+		})
 	}
 }

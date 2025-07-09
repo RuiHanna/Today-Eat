@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -183,5 +184,44 @@ func GetRecommendHistory(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"code": 0, "history": history})
+	}
+}
+
+type CustomRecord struct {
+	UserID   int    `json:"user_id"`
+	DishID   int    `json:"dish_id"`
+	Taste    string `json:"taste"`
+	Distance string `json:"distance"`
+	Budget   int    `json:"budget"`
+	Mood     string `json:"mood"`
+	Weather  string `json:"weather"`
+	Reason   string `json:"reason"`
+}
+
+// AddCustomRecordHandler 添加定制推荐记录
+func AddCustomRecordHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req CustomRecord
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "参数绑定失败"})
+			return
+		}
+
+		stmt := `
+			INSERT INTO custom_recommend_history 
+			(user_id, dish_id, taste, distance, budget, mood, weather, reason, recommended_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`
+		_, err := db.Exec(stmt,
+			req.UserID, req.DishID, req.Taste, req.Distance,
+			req.Budget, req.Mood, req.Weather, req.Reason, time.Now(),
+		)
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 2, "message": "插入数据库失败"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "定制推荐记录已保存"})
 	}
 }
