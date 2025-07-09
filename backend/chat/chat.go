@@ -61,7 +61,7 @@ func callDeepSeekStream(apiKey string, message string, onDelta func(string)) err
 		"model":  "deepseek-chat",
 		"stream": true,
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是一个美食推荐助手，根据用户描述推荐菜品。"},
+			{"role": "system", "content": "你是一个美食推荐助手，你叫TodayEat，根据用户描述推荐菜品。"},
 			{"role": "user", "content": message},
 		},
 		"temperature": 0.7,

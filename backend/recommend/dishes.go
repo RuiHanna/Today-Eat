@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -223,5 +224,68 @@ func AddCustomRecordHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"code": 0, "message": "定制推荐记录已保存"})
+	}
+}
+
+// GetDishDetailHandler 获取菜品详情
+func GetDishDetailHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		dishIDStr := c.Query("id")
+		if dishIDStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 1, "message": "缺少菜品 ID"})
+			return
+		}
+
+		dishID, err := strconv.Atoi(dishIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 2, "message": "菜品 ID 无效"})
+			return
+		}
+
+		var dish Dish
+
+		err = db.QueryRow(`
+			SELECT id, name, price, description, taste, score, image_url, created_at
+			FROM dishes WHERE id = ?
+		`, dishID).Scan(&dish.ID, &dish.Name, &dish.Price, &dish.Description, &dish.Taste, &dish.Score, &dish.ImageURL, &dish.CreatedAt)
+
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"code": 3, "message": "菜品不存在"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 4, "message": "数据库查询失败"})
+			return
+		}
+
+		// 默认未点赞
+		isLiked := false
+
+		// 从 query 中获取 user_id
+		userIDStr := c.Query("user_id")
+		if userIDStr != "" {
+			userID, err := strconv.Atoi(userIDStr)
+			if err == nil {
+				var count int
+				err := db.QueryRow("SELECT COUNT(*) FROM `like` WHERE user_id = ? AND dish_id = ?", userID, dishID).Scan(&count)
+				if err == nil && count > 0 {
+					isLiked = true
+				}
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code": 0,
+			"data": gin.H{
+				"id":          dish.ID,
+				"name":        dish.Name,
+				"priceMin":    int(dish.Price * 0.9),
+				"priceMax":    int(dish.Price * 1.2),
+				"taste":       dish.Taste,
+				"score":       dish.Score,
+				"description": dish.Description,
+				"image":       dish.ImageURL,
+				"liked":       isLiked,
+			},
+		})
 	}
 }
