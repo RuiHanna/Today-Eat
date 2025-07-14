@@ -54,7 +54,9 @@ func ChatWSHandler(apiKey string) gin.HandlerFunc {
 	}
 }
 
-func callDeepSeekStream(apiKey string, message string, onDelta func(string)) error {
+var callDeepSeekStream = realCallDeepSeekStream
+
+func realCallDeepSeekStream(apiKey string, message string, onDelta func(string)) error {
 	url := "https://api.deepseek.com/v1/chat/completions"
 
 	bodyMap := map[string]interface{}{

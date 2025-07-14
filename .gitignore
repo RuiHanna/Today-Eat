@@ -1,3 +1,5 @@
 miniprogram
 *.json
 backend/data/avatar
+backend/user/data
+backend/user/config
